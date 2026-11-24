@@ -1,0 +1,7 @@
+customer_id,full_name,email,phone,ssn,city,state,zip,signup_date,plan,balance,active
+CU-1001,Maria Lopez,maria.lopez@acme.com,(703) 281-4410,514-22-9081,Reston,VA,20190,2023-04-12,gold,1250.40,true
+CU-1002,James Carter,jcarter@gmail.com,(301) 774-2295,233-71-4406,Bethesda,MD,20814,2023-06-30,silver,89.99,true
+CU-1003,Priya Nair,priya.nair@acme.com,(571) 902-1184,601-35-7720,Reston,VA,20191,2024-01-08,gold,410.00,false
+CU-1001,Maria Lopez,maria.lopez@acme.com,(703) 281-4410,514-22-9081,Reston,VA,20190,2023-04-12,gold,1250.40,true
+CU-1004,Tom Becker,tom@beckerllc.com,(202) 555-0147,418-90-3312,Washington,DC,20001,2024-02-19,basic,0.00,true
+CU-1005,Aisha Khan,aisha.khan@gmail.com,(410) 638-7751,357-46-1298,Baltimore,MD,21201,2024-03-03,silver,89.99,
