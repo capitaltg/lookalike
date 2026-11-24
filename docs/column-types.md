@@ -56,7 +56,7 @@ and nothing else.
 | `credit_card` | `4111 1111 1111 1111` | `7302 5518 0946 2213` | Same layout, passes the Luhn checksum. |
 | `zip` | `20190`, `20190-1234` | `27589`, `54009-8812` | |
 | `street` | `12 Oak St` | `787 Swanson Road` | |
-| `address` | `12 Oak St, Reston, VA 20190` | `326 Wesley Path, Lake Amy, OH 44512` | Chosen when most values contain a comma. |
+| `address` | `12 Oak St, Reston, VA 20190` | `326 Wesley Drive, Lake Amy, OH 44512` | Chosen when most values contain a comma. |
 | `address2` | `Apt 4` | `Suite 212` | |
 | `city` | `Reston` | `West Jasonborough` | |
 | `state` | `VA`, `Virginia` | `CO`, `Colorado` | Another US state, same style. Only chosen when the values really are US states. |

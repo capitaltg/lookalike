@@ -12,6 +12,7 @@ import uuid
 from typing import Callable
 
 from faker import Faker
+from faker.providers import BaseProvider
 from faker.providers.address.en_US import Provider as _US
 
 _CONS = "bcdfghjklmnprstvwz"
@@ -21,6 +22,14 @@ _IPV4 = re.compile(r"(\d{1,3}\.){3}\d{1,3}")
 _HEXCH = "0123456789abcdef"
 _LAYOUT = set(string.punctuation + " \t\r\n")
 _SCHEMES = {"http", "https", "ftp", "ftps", "sftp", "ws", "wss", "s3", "file"}
+# Faker picks street suffixes uniformly from the ~225 USPS ones, so most fakes
+# end in "Trace" or "Stravenue". Draw mostly from the ones people recognise.
+_COMMON_SUFFIXES = {
+    "Street": 30, "Avenue": 16, "Road": 14, "Drive": 14, "Lane": 8, "Court": 6,
+    "Boulevard": 4, "Way": 4, "Place": 4, "Circle": 3, "Terrace": 2, "Parkway": 2,
+    "Trail": 2, "Highway": 1,
+}
+_RARE_SUFFIX_RATE = 0.03
 
 
 def _luhn(body: str) -> str:
@@ -41,6 +50,7 @@ class Fakes:
         self.f = Faker(locale)
         self.f.random = rng
         self._domains: dict[str, str] = {}
+        self._weight_suffixes()
         self.GENERATORS: dict[str, Callable[[str], str]] = {
             "text": self.scramble,
             "zip": self.scramble,
@@ -65,6 +75,31 @@ class Fakes:
             "state": self.state,
             "country": self.country,
         }
+
+    def _weight_suffixes(self) -> None:
+        """Make the locale's common street suffixes the likely ones.
+
+        Only applies where the locale's own list has them (English locales);
+        others keep Faker's behaviour.
+        """
+        # list(): some locales (en_PH) keep the suffixes as a weighted mapping.
+        pool = list(next(
+            (p.street_suffixes for p in self.f.get_providers() if hasattr(p, "street_suffixes")),
+            (),
+        ))
+        common = [s for s in _COMMON_SUFFIXES if s in pool]
+        if len(common) < 5:
+            return
+        weights = [_COMMON_SUFFIXES[s] for s in common]
+        rng = self.rng
+
+        class _Suffix(BaseProvider):
+            def street_suffix(self) -> str:
+                if rng.random() < _RARE_SUFFIX_RATE:
+                    return rng.choice(pool)
+                return rng.choices(common, weights)[0]
+
+        self.f.add_provider(_Suffix)
 
     def new_column(self) -> None:
         """Forget per-column state (the email domain mapping)."""

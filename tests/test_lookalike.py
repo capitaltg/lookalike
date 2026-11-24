@@ -545,3 +545,45 @@ def test_review_profiles(tmp_path, monkeypatch, capsys):
     cfg.write_text('[p]\nformat = "xml"\n')
     assert main(["inspect", str(src), "--profile", "p"]) == 1
     assert main(["inspect", str(src), "--profile", "p", "--format", "csv"]) == 0
+
+
+def test_street_suffixes_are_mostly_common_ones():
+    import random
+    from collections import Counter
+
+    from lookalike.fake import _COMMON_SUFFIXES, Fakes
+
+    f = Fakes(random.Random(3))
+    last = Counter(f.GENERATORS["street"]("12 Oak St").split()[-1] for _ in range(400))
+    # Faker appends "Apt. 123"/"Suite 123" to half of them; count the rest.
+    words = {w: n for w, n in last.items() if not w.isdigit()}
+    common = sum(n for w, n in words.items() if w in _COMMON_SUFFIXES)
+    assert common / sum(words.values()) > 0.9
+    assert last["Street"] > last["Highway"]
+    full = Fakes(random.Random(3)).GENERATORS["address"]("34 W Chesnut Street, New York, NY 10021")
+    assert "\n" not in full
+
+
+def test_street_suffix_weighting_leaves_other_locales_alone():
+    import random
+
+    from lookalike.fake import Fakes
+
+    from faker import Faker
+
+    f = Fakes(random.Random(3), "de_DE")
+    plain = Faker("de_DE")
+    plain.random = random.Random(3)
+    assert [f.GENERATORS["street"]("Hauptstr. 5") for _ in range(20)] == [
+        plain.street_address() for _ in range(20)
+    ]
+
+
+def test_review_street_suffix_pool_may_be_a_mapping():
+    # en_PH keeps street_suffixes as an OrderedDict; the rare branch indexed it.
+    import random
+
+    from lookalike.fake import Fakes
+
+    f = Fakes(random.Random(3), "en_PH")
+    assert all(f.GENERATORS["street"]("12 Oak St") for _ in range(1000))
