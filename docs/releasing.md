@@ -45,22 +45,20 @@ The GitHub side is already configured:
 - repository variable `PYPI_PUBLISH=true`. Set it to anything else to make a
   release skip PyPI and only create the GitHub release.
 
-The PyPI side has to be done once by a person, in the PyPI web interface. In
-the `capitaltg` organization at <https://pypi.org/manage/organizations/>, open
-*Publishing* and add a GitHub pending publisher:
+The PyPI side is also done: version 0.1.0 was published on 2026-11-24, and
+the project at <https://pypi.org/project/lookalike/> has a GitHub trusted
+publisher with these values (project page, *Manage* > *Publishing*):
 
 | Field | Value |
 |---|---|
-| PyPI project name | `lookalike` |
 | Owner | `capitaltg` |
 | Repository name | `lookalike` |
 | Workflow name | `release.yml` |
 | Environment name | `pypi` |
 
-The first successful release creates the project under the organization. A
-pending publisher does not reserve the name, so cut the first release soon
-after adding it. Until it is added, the `pypi` job fails and no GitHub release
-is created.
+If the `pypi` job fails with `invalid-publisher`, these values no longer match
+the workflow. Fix them on PyPI, then re-run the failed job from the *Actions*
+tab; do not push the tag again.
 
 ## Good to know
 
