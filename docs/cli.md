@@ -32,7 +32,7 @@ create the file. See [Verification](verification.md).
 |---|---|
 | `--keep COLUMN` | Leave this column unchanged. Repeatable. Reported as a warning. |
 | `--drop COLUMN` | Remove this column from the output. Repeatable. |
-| `--type COLUMN=TYPE` | Use this type instead of the detected one. Repeatable. Types are listed in [Column types](column-types.md). |
+| `--type COLUMN=TYPE` | Use this type for this column instead of the detected one, e.g. `--type col7=name`. Repeatable. Types are listed in [Column types](column-types.md). |
 | `--null-value TOKEN` | Treat this exact string as a blank and leave it as is. Repeatable; replaces the default list. |
 | `--no-null-tokens` | Treat only empty cells as blanks. `NA`, `NULL` and similar are anonymized like any other value. |
 | `--format FORMAT` | `csv`, `json`, `jsonl` or `parquet`, when the file extension is not enough. |
@@ -91,10 +91,11 @@ Drop what you do not need, keep a non-sensitive measure:
 lookalike anonymize orders.csv out.csv --drop notes --drop ssn --keep quantity
 ```
 
-A reference column was typed `text` but holds UUIDs with odd formatting:
+A column called `col7` holds people's names, but its header gives no clue, so
+`inspect` shows it as `text`. Tell `lookalike` what it is (`COLUMN=TYPE`):
 
 ```
-lookalike anonymize in.csv out.csv --type ref=uuid
+lookalike anonymize in.csv out.csv --type col7=name
 ```
 
 `NA` is a real country code in this file, not a blank:
