@@ -75,6 +75,12 @@ class RegexGen:
             return ("chars", self._charset(av))
         if op in _REPEATS:
             lo, hi, sub = av
+            if lo > MAX_LENGTH or (hi is not _c.MAXREPEAT and hi > MAX_LENGTH):
+                # Also covers repeats of an empty group, which add no length but
+                # still cost the regex engine one step per repetition.
+                raise ValueError(
+                    f"regular expression {self.pattern!r}: repeat counts above {MAX_LENGTH} are not supported"
+                )
             if hi is _c.MAXREPEAT:
                 hi = lo + MAX_EXTRA
             inner = self._seq(sub)

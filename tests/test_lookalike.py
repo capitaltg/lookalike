@@ -398,11 +398,11 @@ def test_regex_review_fixes(tmp_path):
     from lookalike.regexgen import RegexGen
 
     t = time.time()
-    for bad in ["[a-z]{1000000000}", "(?:a{100000}){100000}", "a{0,10001}", "(" * 350 + "a" + ")" * 350]:
+    for bad in ["[a-z]{1000000000}", "(?:a{100000}){100000}", "a{0,10001}", r"(?:(?:){100000}){100000}[A-Z]", "(" * 350 + "a" + ")" * 350]:
         with pytest.raises(ValueError):
             RegexGen(bad)
     assert RegexGen("[a-z]{900}").size() == 10**30
-    assert RegexGen(r"(?:(?:){100000}){100000}[A-Z]").make(random.Random(0)).isupper()
+    assert RegexGen(r"(?:(?:){50}){50}[A-Z]").make(random.Random(0)).isupper()
     assert RegexGen("a{0,900}").size() == 901
     assert time.time() - t < 2
     src, dst = tmp_path / "in.csv", tmp_path / "out.csv"
