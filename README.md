@@ -114,3 +114,7 @@ uv run pytest
 ```
 
 Pushing a `vX.Y.Z` tag publishes to PyPI; see [Releasing](docs/releasing.md).
+
+## License
+
+[Apache License 2.0](LICENSE)
