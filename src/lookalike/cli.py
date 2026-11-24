@@ -25,7 +25,8 @@ def _common(p: argparse.ArgumentParser) -> None:
     p.add_argument("--drop", action="append", default=[], metavar="COLUMN",
                    help="remove a column from the output (repeatable)")
     p.add_argument("--type", action="append", default=[], metavar="COLUMN=TYPE", dest="types",
-                   help=f"override the detected type (repeatable). Types: {', '.join(detect.TYPES)}")
+                   help=f"override the detected type (repeatable). Types: {', '.join(detect.TYPES)}, "
+                   "or regex:PATTERN for values matching your own pattern, e.g. 'code=regex:[0-9]{2}-[A-Z]{5}'")
     p.add_argument("--null-value", action="append", metavar="TOKEN", dest="nulls",
                    help=f"string treated as null and left as is (repeatable; default: {', '.join(DEFAULT_NULLS)})")
     p.add_argument("--no-null-tokens", action="store_true",
@@ -35,7 +36,11 @@ def _common(p: argparse.ArgumentParser) -> None:
 def _options(a: argparse.Namespace) -> Options:
     types = {}
     for item in a.types:
-        col, sep, typ = item.rpartition("=")
+        cut = item.find("=regex:")
+        if cut > 0:  # the pattern itself may contain "=", so split at the first "=regex:"
+            col, sep, typ = item[:cut], "=", item[cut + 1 :]
+        else:
+            col, sep, typ = item.rpartition("=")
         if not sep or not col:
             raise ValueError(f"--type expects COLUMN=TYPE, got {item!r}")
         types[col] = typ

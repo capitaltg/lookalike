@@ -5,7 +5,8 @@ it does not decide *whether* the column is anonymized. Every column is, unless
 you `--keep` it.
 
 Run `lookalike inspect FILE` to see the detected types, and override any of
-them with `--type COLUMN=TYPE`.
+them with `--type COLUMN=TYPE`. For a format none of the types covers, give
+[your own pattern](#your-own-pattern-regex).
 
 ## How detection works
 
@@ -70,6 +71,59 @@ and nothing else.
 | `float` | `1250.40` | `954.47` | Same, with the same number of decimals. |
 | `date`, `datetime` | `2023-04-12` | `2023-10-17` | A random moment between the column's earliest and latest, in the same format. |
 | `bool` | `true` | `true` or `false` | The whole column is either swapped or left alone, by coin flip. See [Privacy guarantees](privacy.md). |
+
+## Your own pattern: `regex:`
+
+When none of the built-in types gives the format you want, describe it with a
+regular expression. Put `regex:` in front of the pattern:
+
+```
+lookalike anonymize in.csv out.csv --type 'code=regex:[0-9]{2}-[A-Z]{5}'
+```
+
+Every value in the `code` column is replaced by a random string that matches
+the pattern, such as `66-QNIDO` or `02-VTIDA`. As with every other type, equal
+originals get the same fake and different originals get different fakes.
+
+Put the whole option in single quotes so the shell does not interpret the
+brackets and braces.
+
+Unlike the built-in types, the fake takes nothing from the original, not even
+its length: the pattern alone decides the shape. The originals do not have to
+match the pattern.
+
+| Pattern | Produces |
+|---|---|
+| `[0-9]{2}-[A-Z]{5}` | `66-QNIDO` |
+| `(INV\|PO)-\d{4,6}` | `PO-48213`, `INV-0931` |
+| `[A-Z]{3}\d{3}[a-f]` | `QTM402c` |
+| `EMP\d{6}` | `EMP550917` |
+| `[A-Z][a-z]{3,8}` | `Tgkwa`, `Mzoqplrn` |
+
+What you can use:
+
+- literal characters, `.`, classes such as `[A-Z0-9_]` and `[^,]`, and `\d`,
+  `\w`, `\s` (with `\D`, `\W`, `\S`);
+- repeats: `{3}`, `{2,5}`, `?`, `*`, `+`;
+- groups and alternatives: `(AB|CD)`, `(?:...)`.
+
+Details:
+
+- `*`, `+` and `{2,}` have no upper limit in a regular expression; `lookalike`
+  produces at most 8 more than the minimum.
+- `.` gives a letter or digit. Negated classes (`[^,]`, `\D`, `\W`, `\S`)
+  draw from plain ASCII letters, digits and punctuation.
+- A pattern may not produce values longer than 1,000 characters.
+- Back-references (`\1`) and look-ahead/look-behind are not supported and are
+  rejected with an error.
+- The pattern must allow enough different values. A column with 500 distinct
+  values cannot be filled from `[A-Z]` (26 possibilities); the run stops with
+  an error naming the column, and nothing is written. Text values already
+  present in the column are never reused, so allow some room.
+- Verification also checks that every output value matches the pattern. When
+  you run `verify` later, pass the same `--type` option.
+- JSON numbers and booleans in the column stay numbers and booleans; the
+  pattern applies to text values.
 
 ## Good to know
 

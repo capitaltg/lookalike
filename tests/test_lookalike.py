@@ -343,3 +343,71 @@ def test_review_round_two(tmp_path):
     assert main(["verify", str(a), str(b)]) == 2
     a.write_text("a;b\nALICE\nBOB;CAROL\n")
     assert load(a).meta["names"] == ["a", "b"]
+
+
+def test_regex_type(tmp_path):
+    import re
+
+    from lookalike.regexgen import RegexGen
+
+    rng = random.Random(0)
+    for pat in [r"[0-9]{2}-[A-Z]{5}", r"(INV|PO)-\d{4,6}", r"[^0-9]\w+\s?x*", r"^a.c$", r"\d{3}=[a-f]{2}", r"(?:ab|c){2,3}"]:
+        g = RegexGen(pat)
+        assert all(re.fullmatch(pat, g.make(rng)) for _ in range(200)), pat
+    assert RegexGen(r"[0-9]{2}-[A-Z]{5}").size() == 100 * 26**5
+    assert RegexGen(r"(a|bc)?x").size() == 3
+    for bad in [r"(a)\1", r"a(?=b)", r"[a", r"(?<!x)y"]:
+        with pytest.raises(ValueError):
+            RegexGen(bad)
+
+    pat = r"[0-9]{2}-[A-Z]{5}"
+    recs = [{"code": f"legacy {i % 30}", "n": i} for i in range(90)]
+    opts = Options(seed=3, types={"code": "regex:" + pat})
+    out, plans, _ = anonymize(recs, opts)
+    assert plans["code"].type == "regex" and plans["code"].fmt == pat
+    assert all(re.fullmatch(pat, r["code"]) for r in out)
+    assert len({r["code"] for r in out}) == 30
+    rep = verify(recs, out, plans, NULLS)
+    assert rep["passed"] and rep["columns"]["code"]["pattern_mismatches"] == 0
+    out[0]["code"] = "nope"
+    assert not verify(recs, out, plans, NULLS)["passed"]
+
+    # too narrow a pattern is an error, not a silent format break
+    with pytest.raises(RuntimeError, match="code"):
+        anonymize(recs, Options(seed=1, types={"code": "regex:[A-C]"}))
+    # originals already matching the pattern are never reused
+    recs = [{"c": x} for x in "ABCDEFGHIJ"]
+    out, plans, _ = anonymize(recs, Options(seed=1, types={"c": "regex:[A-Z]"}))
+    assert not {r["c"] for r in out} & set("ABCDEFGHIJ")
+    with pytest.raises(ValueError):
+        make_plans(recs, Options(types={"c": "regex:(a)\\1"}))
+
+    # command line: a pattern containing "=" and a column whose values vary in shape
+    src, dst = tmp_path / "in.csv", tmp_path / "out.csv"
+    src.write_text("id,code\n1,x\n2,yy\n3,x\n")
+    assert main(["anonymize", str(src), str(dst), "--type", r"code=regex:K=\d{3}"]) == 0
+    rows = read_csv(dst)
+    assert all(re.fullmatch(r"K=\d{3}", r["code"]) for r in rows) and rows[0]["code"] == rows[2]["code"]
+    assert main(["verify", str(src), str(dst), "--type", r"code=regex:K=\d{3}"]) == 0
+    assert main(["anonymize", str(src), str(dst), "--type", "code=regex:[a"]) == 1
+
+
+def test_regex_review_fixes(tmp_path):
+    import time
+
+    from lookalike.regexgen import RegexGen
+
+    t = time.time()
+    for bad in ["[a-z]{1000000000}", "(?:a{100000}){100000}", "a{0,10001}", "(" * 350 + "a" + ")" * 350]:
+        with pytest.raises(ValueError):
+            RegexGen(bad)
+    assert RegexGen("[a-z]{900}").size() == 10**30
+    assert RegexGen(r"(?:(?:){100000}){100000}[A-Z]").make(random.Random(0)).isupper()
+    assert RegexGen("a{0,900}").size() == 901
+    assert time.time() - t < 2
+    src, dst = tmp_path / "in.csv", tmp_path / "out.csv"
+    src.write_text("a=b,n\nx,1\ny,2\n")
+    assert main(["anonymize", str(src), str(dst), "--type", "a=b=regex:[A-Z]{3}=[0-9]"]) == 0
+    import re
+
+    assert all(re.fullmatch("[A-Z]{3}=[0-9]", r["a=b"]) for r in read_csv(dst))

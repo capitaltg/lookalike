@@ -32,7 +32,7 @@ create the file. See [Verification](verification.md).
 |---|---|
 | `--keep COLUMN` | Leave this column unchanged. Repeatable. Reported as a warning. |
 | `--drop COLUMN` | Remove this column from the output. Repeatable. |
-| `--type COLUMN=TYPE` | Use this type for this column instead of the detected one, e.g. `--type col7=name`. Repeatable. Types are listed in [Column types](column-types.md). |
+| `--type COLUMN=TYPE` | Use this type for this column instead of the detected one, e.g. `--type col7=name`. `TYPE` can also be `regex:PATTERN` to generate values from your own pattern. Repeatable. Types are listed in [Column types](column-types.md). |
 | `--null-value TOKEN` | Treat this exact string as a blank and leave it as is. Repeatable; replaces the default list. |
 | `--no-null-tokens` | Treat only empty cells as blanks. `NA`, `NULL` and similar are anonymized like any other value. |
 | `--format FORMAT` | `csv`, `json`, `jsonl` or `parquet`, when the file extension is not enough. |
@@ -96,6 +96,13 @@ A column called `col7` holds people's names, but its header gives no clue, so
 
 ```
 lookalike anonymize in.csv out.csv --type col7=name
+```
+
+Employee numbers should look like `EMP` plus six digits, whatever they looked
+like before (see [Your own pattern](column-types.md#your-own-pattern-regex)):
+
+```
+lookalike anonymize in.csv out.csv --type 'employee_no=regex:EMP\d{6}'
 ```
 
 `NA` is a real country code in this file, not a blank:

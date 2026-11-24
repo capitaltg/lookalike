@@ -39,6 +39,7 @@ For each anonymized column:
 | Changed | Any cell still holds its original value |
 | Types | A value changed kind (a number became text) |
 | No reuse | An output value equals any original value of the same column, ignoring case. Applies to all types except `int`, `float`, `date`, `datetime`, `bool`, `state` and `country`, where overlap is unavoidable or harmless. |
+| Pattern | The column has a `regex:` type and an output value does not match the pattern |
 
 For each kept column: every cell is identical to the original.
 

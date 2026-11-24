@@ -7,6 +7,7 @@ report contains column names and counts, never cell values.
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from typing import Any, Callable
 
@@ -204,6 +205,12 @@ def verify(
             o_strs = {v.casefold() for v in o_vals if isinstance(v, str)}
             reused = len({v.casefold() for v in a_vals if isinstance(v, str)} & o_strs)
             col["output_values_seen_in_original"] = reused
+            if plan is not None and plan.type == "regex":
+                rx = re.compile(plan.fmt)
+                off = sum(1 for v in a_vals if isinstance(v, str) and not rx.fullmatch(v))
+                col["pattern_mismatches"] = off
+                if off:
+                    col_issues.append(f"{off} output values do not match the pattern {plan.fmt!r}")
             strict = plan is not None and plan.type not in detect.NON_STRICT
             col["strict"] = strict
             if strict and reused:

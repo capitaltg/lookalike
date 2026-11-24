@@ -20,6 +20,9 @@ from typing import Any, Callable, Iterator
 
 from . import detect
 from .fake import Fakes
+from .regexgen import RegexGen
+
+REGEX_PREFIX = "regex:"
 
 DEFAULT_NULLS = ("NULL", "null", "None", "N/A", "n/a", "NA", "NaN", "nan", "#N/A")
 SAMPLE = 2000
@@ -150,8 +153,12 @@ def make_plans(records: list, opts: Options, cols: dict[str, Counter] | None = N
     cols = collect(records, opts) if cols is None else cols
     keep = selector(opts.keep)
     for p, t in opts.types.items():
-        if t not in detect.TYPES:
-            raise ValueError(f"unknown type {t!r} for {p!r}; choose from {', '.join(detect.TYPES)}")
+        if t.startswith(REGEX_PREFIX):
+            RegexGen(t[len(REGEX_PREFIX) :])  # raises ValueError if the pattern cannot be used
+        elif t not in detect.TYPES:
+            raise ValueError(
+                f"unknown type {t!r} for {p!r}; choose from {', '.join(detect.TYPES)} or regex:PATTERN"
+            )
     plans = {}
     for path, ctr in cols.items():
         total = sum(ctr.values())
@@ -167,7 +174,9 @@ def make_plans(records: list, opts: Options, cols: dict[str, Counter] | None = N
                 break
         typ, fmt = detect.infer(path, sample, complete=len(ctr) <= SAMPLE)
         forced = next((t for p, t in opts.types.items() if selector([p])(path)), None)
-        if forced and forced != typ:
+        if forced and forced.startswith(REGEX_PREFIX):
+            typ, fmt = "regex", forced[len(REGEX_PREFIX) :]
+        elif forced and forced != typ:
             typ, fmt = forced, None
             if forced in ("date", "datetime"):
                 found = detect._date_format(sample)
@@ -239,7 +248,7 @@ class Engine:
                 dt = detect.parse_iso(v) if plan.fmt == "iso" else detect.parse_strptime(v, plan.fmt)
                 if dt is not None:
                     return "datetime", dt
-            elif T in self.fakes.GENERATORS:
+            elif T == "regex" or T in self.fakes.GENERATORS:
                 return T, None
             return "text", None
         raise ValueError(
@@ -252,7 +261,7 @@ class Engine:
         try:
             return self._build(plan, values)
         except RuntimeError as e:
-            hint = " (try without --preserve-order)" if self.opts.preserve_order else ""
+            hint = " (try without --preserve-order)" if self.opts.preserve_order and "range" in str(e) else ""
             raise RuntimeError(f"column {plan.path!r}: {e}{hint}") from e
 
     def _build(self, plan: ColumnPlan, values: list) -> dict:
@@ -321,6 +330,8 @@ class Engine:
                     n = 0
                     while not accept(v, self.rng.randbytes(len(v) + n // 60)):
                         n += 1
+            elif kind == "regex":
+                self._regex(plan, items, accept)
             else:
                 gen = self.fakes.GENERATORS[kind]
                 for v, _ in items:
@@ -335,6 +346,22 @@ class Engine:
                             break
                         n += 1
         return out
+
+    def _regex(self, plan: ColumnPlan, items, accept) -> None:
+        """Fill a column with distinct random strings matching the user's pattern."""
+        gen = RegexGen(plan.fmt)
+        short = RuntimeError(
+            f"the pattern {plan.fmt!r} cannot produce enough different new values "
+            f"for the {len(items)} distinct values of this column; use a wider pattern"
+        )
+        if gen.size() < len(items):
+            raise short
+        for v, _ in items:
+            tries = 0
+            while not accept(v, gen.make(self.rng)):
+                tries += 1
+                if tries > 5000:
+                    raise short
 
     def _numeric(self, items, accept, render, lim=None, min_span=0) -> None:
         """Map values on an integer axis to distinct random points of its range.

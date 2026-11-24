@@ -47,7 +47,7 @@ fake_rows, plans, _ = anonymize(rows, Options())
 |---|---|---|
 | `keep` | `[]` | Columns to leave unchanged |
 | `drop` | `[]` | Columns to remove |
-| `types` | `{}` | `{column: type}` overrides |
+| `types` | `{}` | `{column: type}` overrides; a type may be `"regex:PATTERN"` |
 | `null_values` | `NULL`, `NA`, ... | Strings treated as blank; `()` for none |
 | `locale` | `"en_US"` | Faker locale for names and addresses |
 | `preserve_order` | `False` | Keep sort order of numbers and dates |
