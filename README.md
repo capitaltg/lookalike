@@ -101,3 +101,5 @@ anything.
 uv sync
 uv run pytest
 ```
+
+Pushing a `vX.Y.Z` tag publishes to PyPI; see [Releasing](docs/releasing.md).

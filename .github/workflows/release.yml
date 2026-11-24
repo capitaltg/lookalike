@@ -1,0 +1,131 @@
+# Release: push a tag vX.Y.Z (matching pyproject's version) on a commit in main.
+#   verify  -> the full CI run on the tagged commit
+#   build   -> wheel and sdist, built once, smoke-tested, with SHA-256 checksums
+#   pypi    -> uploads those exact files to PyPI with Trusted Publishing (OIDC, no stored token)
+#              and PEP 740 attestations; only when the repo variable PYPI_PUBLISH is "true"
+#   publish -> GitHub release with the same files
+# One-time setup and the release steps are in docs/releasing.md.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  UV_VERSION: "0.10.4"
+
+jobs:
+  verify:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  build:
+    name: Build release artifacts
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # all branches, so origin/main is present for the on-main check
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+      - name: Tag matches version and is on main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(uv version --short)
+          if [[ "$TAG" != "v$version" ]]; then
+            echo "::error::tag $TAG does not match pyproject version $version"; exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tagged commit $GITHUB_SHA is not on main"; exit 1
+          fi
+      - name: Build (reproducible timestamps)
+        run: |
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)
+          export SOURCE_DATE_EPOCH
+          uv build --out-dir dist
+      - name: Install the wheel on its own and run it
+        run: scripts/smoke-test.sh "$(ls dist/*.whl)"
+      - name: Checksums
+        run: cd dist && sha256sum -- * > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          retention-days: 90
+
+  # PyPI never accepts a filename twice, even after deletion, so this runs only after CI and the
+  # build passed. It uploads exactly the files built above (checksum-verified), nothing rebuilt.
+  # The PyPI project trusts only this workflow file in the `pypi` environment, which is
+  # restricted to v* tags; see docs/releasing.md.
+  pypi:
+    name: Publish to PyPI
+    needs: build
+    if: ${{ vars.PYPI_PUBLISH == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: pypi
+      url: https://pypi.org/project/lookalike/
+    permissions:
+      id-token: write # Trusted Publishing (OIDC) and the PEP 740 attestations
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: Pick the built wheel and sdist
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          (cd dist && sha256sum -c SHA256SUMS)
+          version="${TAG#v}"
+          mkdir pypi-dist
+          cp -- "dist/lookalike-$version-py3-none-any.whl" "dist/lookalike-$version.tar.gz" pypi-dist/
+          ls -l pypi-dist
+          sha256sum pypi-dist/*
+      # Pinned by commit. That commit runs ghcr.io/pypa/gh-action-pypi-publish by tag, not digest
+      # (the same accepted risk as in capitaltg/icebergdx).
+      - uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: pypi-dist/
+          attestations: true
+          print-hash: true
+
+  publish:
+    name: Publish GitHub release
+    needs: [build, pypi]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.pypi.result != 'failure' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: release # restricted to v* tags
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: dist
+          path: dist
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          cd dist && sha256sum -c SHA256SUMS
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes \
+            --title "$TAG" -- *
