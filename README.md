@@ -1,6 +1,6 @@
 # lookalike
 
-Turn a data file full of real people into one that looks the same but isn't.
+Turn a file of real data into one that looks the same but isn't.
 
 `lookalike` replaces every value in a CSV, JSON, JSON Lines or Parquet file
 with random fake data of the same type and shape. Each column keeps its number
