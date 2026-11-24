@@ -6,7 +6,7 @@ This walks through one complete run using the sample file in
 ## 1. Install
 
 ```
-pip install "git+https://github.com/capitaltg/lookalike.git"
+pip install lookalike
 lookalike --help
 ```
 
@@ -92,6 +92,9 @@ lookalike verify examples/customers.csv safe.csv
 
 Pass the same `--keep`, `--drop`, `--type` and null options you used when
 anonymizing, so the verifier judges each column the same way.
+
+If you use the same options often, save them once as a
+[profile](cli.md#profiles) and pass `--profile NAME` instead.
 
 ## Next steps
 

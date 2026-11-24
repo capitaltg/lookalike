@@ -48,7 +48,7 @@ One JSON value per line; blank lines are ignored. Otherwise the same as JSON.
 Needs `pyarrow`:
 
 ```
-pip install "lookalike[parquet] @ git+https://github.com/capitaltg/lookalike.git"
+pip install "lookalike[parquet]"
 ```
 
 - The schema is kept exactly; dates, timestamps, decimals and binary columns

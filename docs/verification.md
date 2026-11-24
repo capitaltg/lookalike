@@ -19,6 +19,7 @@ by anyone who holds both.
   Pass the same `--keep`, `--drop`, `--type`, `--null-value` and
   `--no-null-tokens` options used when anonymizing. They change how columns
   are judged; with different options a good file may be reported as failing.
+  If you anonymized with `--profile NAME`, pass the same `--profile NAME`.
 
 ## The checks
 
@@ -62,6 +63,7 @@ Top level:
 | `records` | Number of records compared |
 | `row_aligned` | `false` when rows could only be compared as totals (`--unordered`) |
 | `randomness` | Secure system source, or seeded |
+| `profile` | The `--profile` name, when one was used. `options` already includes what it contributed |
 | `options` | The options used |
 | `preserved_by_design` | The properties the tool keeps on purpose |
 | `columns` | Per-column results, below |

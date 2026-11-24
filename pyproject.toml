@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Anonymize structured data files with random fake values while preserving schema, types and uniqueness cardinality."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["faker>=20"]
+dependencies = ["faker>=20", "tomli>=2; python_version < '3.11'"]
 
 [project.urls]
 Repository = "https://github.com/capitaltg/lookalike"

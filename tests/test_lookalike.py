@@ -1,6 +1,7 @@
 import csv
 import json
 import random
+import re
 from collections import Counter
 
 import pytest
@@ -411,3 +412,136 @@ def test_regex_review_fixes(tmp_path):
     import re
 
     assert all(re.fullmatch("[A-Z]{3}=[0-9]", r["a=b"]) for r in read_csv(dst))
+
+
+def test_profiles(tmp_path, monkeypatch, capsys):
+    import re
+
+    from lookalike import config
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LOOKALIKE_CONFIG", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    src, dst = tmp_path / "in.csv", tmp_path / "out.csv"
+    src.write_text("id,code,region,secret,who\n1,x,east,s1,Ann Smith\n2,yy,west,s2,Bob Jones\n3,x,east,s3,Ann Smith\n")
+
+    # no config anywhere
+    assert main(["anonymize", str(src), str(dst), "--profile", "p"]) == 1
+    assert main(["profile", "list"]) == 0
+
+    # save: lands in the user file, awkward strings survive the round trip
+    pattern = r"regex:K='\d{3}"
+    args = ["--type", f"code={pattern}", "--type", "who=name", "--keep", "region", "--drop", "secret"]
+    assert main(["profile", "save", "cust", *args, "--shuffle-rows", "--delimiter", ","]) == 0
+    cfg = tmp_path / "xdg" / "lookalike" / "config.toml"
+    assert config.load_all(cfg)["cust"] == {
+        "keep": ["region"], "drop": ["secret"], "shuffle_rows": True, "delimiter": ",",
+        "types": {"code": pattern, "who": "name"},
+    }  # fmt: skip
+    assert main(["profile", "save", "cust", "--drop", "x"]) == 1  # exists
+    assert main(["profile", "save", "bad name", "--drop", "x"]) == 1
+    assert main(["profile", "save", "empty"]) == 1
+    assert main(["profile", "save", "badtype", "--type", "a=nosuchtype"]) == 1
+    assert main(["profile", "save", "badre", "--type", "a=regex:[a"]) == 1
+    assert main(["profile", "save", "odd", "--type", "orders[].ref=uuid", "--null-value", "tab\there", "--null-value", "\U0001f600"]) == 0
+    assert config.load_all(cfg)["odd"] == {"null_values": ["tab\there", "\U0001f600"], "types": {"orders[].ref": "uuid"}}
+    assert set(config.load_all(cfg)) == {"cust", "odd"}
+    capsys.readouterr()
+    assert main(["profile", "list"]) == 0
+    assert "[cust.types]" in capsys.readouterr().out
+
+    # use: profile options apply; verify infers --unordered from shuffle_rows
+    rep = tmp_path / "r.json"
+    assert main(["anonymize", str(src), str(dst), "--profile", "cust", "--report", str(rep)]) == 0
+    rows = read_csv(dst)
+    assert all(re.fullmatch(r"K='\d{3}", r["code"]) for r in rows) and "secret" not in rows[0]
+    assert sorted(r["region"] for r in rows) == ["east", "east", "west"]
+    report = json.loads(rep.read_text())
+    assert report["profile"] == "cust" and report["options"]["drop"] == ["secret"] and report["rows_shuffled"]
+    assert main(["verify", str(src), str(dst), "--profile", "cust"]) == 0
+    assert main(["inspect", str(src), "--profile", "cust"]) == 0
+    assert main(["anonymize", str(src), str(dst), "--profile", "nope"]) == 1
+
+    # command line goes on top: type override for one column, extra drop
+    assert main(["anonymize", str(src), str(dst), "--profile", "cust", "--type", "code=regex:Z[0-9]{4}", "--drop", "who"]) == 0
+    rows = read_csv(dst)
+    assert all(re.fullmatch("Z[0-9]{4}", r["code"]) for r in rows)
+    assert "who" not in rows[0] and "secret" not in rows[0]
+
+    # lookup order: ./lookalike.toml beats the user file, --config and the env var beat both
+    (tmp_path / "lookalike.toml").write_text('[cust]\ndrop = ["who"]\n')
+    assert main(["anonymize", str(src), str(dst), "--profile", "cust"]) == 0
+    assert "secret" in read_csv(dst)[0] and "who" not in read_csv(dst)[0]
+    assert main(["anonymize", str(src), str(dst), "--profile", "cust", "--config", str(cfg)]) == 0
+    assert "secret" not in read_csv(dst)[0]
+    monkeypatch.setenv("LOOKALIKE_CONFIG", str(cfg))
+    assert main(["anonymize", str(src), str(dst), "--profile", "odd"]) == 0
+    monkeypatch.setenv("LOOKALIKE_CONFIG", str(tmp_path / "missing.toml"))
+    assert main(["anonymize", str(src), str(dst), "--profile", "odd"]) == 1
+    monkeypatch.delenv("LOOKALIKE_CONFIG")
+
+    # null handling: profile's no_null_tokens applies; --null-value on the command line replaces it
+    nsrc = tmp_path / "n.csv"
+    nsrc.write_text("c,d\nNA,1\nUS,2\nDE,3\n")
+    hand = tmp_path / "hand.toml"
+    hand.write_text("# mine\n[n]\nno_null_tokens = true\n")
+    assert main(["anonymize", str(nsrc), str(dst), "--profile", "n", "--config", str(hand)]) == 0
+    assert "NA" not in {r["c"] for r in read_csv(dst)}
+    assert main(["anonymize", str(nsrc), str(dst), "--profile", "n", "--config", str(hand), "--null-value", "NA"]) == 0
+    assert read_csv(dst)[0]["c"] == "NA"
+    # saving into a hand-written file keeps its text
+    assert main(["profile", "save", "m", "--config", str(hand), "--locale", "de_DE"]) == 0
+    assert hand.read_text().startswith("# mine\n[n]\nno_null_tokens = true\n\n[m]\n")
+
+    # bad files are refused, and a failed save leaves the file alone
+    for bad in ['[p]\nkeeep = ["a"]\n', '[p]\nkeep = "a"\n', "[p]\nseed = 1\n", "[p]\n[p.types]\na = 1\n", "x = 1\n", "[p\n", '[p]\nformat = "xml"\n']:
+        b = tmp_path / "bad.toml"
+        b.write_text(bad)
+        assert main(["anonymize", str(src), str(dst), "--profile", "p", "--config", str(b)]) == 1, bad
+    b.write_text("[p\n")
+    assert main(["profile", "save", "q", "--drop", "x", "--config", str(b)]) == 1
+    assert b.read_text() == "[p\n"
+
+
+def test_review_profiles(tmp_path, monkeypatch, capsys):
+    from lookalike import config
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("LOOKALIKE_CONFIG", raising=False)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    src, dst = tmp_path / "in.csv", tmp_path / "out.csv"
+    src.write_text("id,email\n1,a@x.com\n2,b@x.com\n")
+    cfg = tmp_path / "lookalike.toml"
+
+    # a failed save must not damage the file (unencodable text from a raw byte argument)
+    cfg.write_text("[keepme]\ndrop = [\"id\"]\n")
+    assert main(["profile", "save", "new", "--keep", "\udcff"]) == 1
+    assert cfg.read_text() == "[keepme]\ndrop = [\"id\"]\n" and len(list(tmp_path.glob("lookalike.toml*"))) == 1
+
+    # a save keeps the file's permissions, leaves no temp file, and ignores a stray lookalike.toml.tmp
+    cfg.chmod(0o600)
+    stray = tmp_path / "lookalike.toml.tmp"
+    stray.symlink_to(cfg)
+    assert main(["profile", "save", "new", "--keep", "id"]) == 0
+    assert cfg.stat().st_mode & 0o777 == 0o600 and not cfg.is_symlink() and stray.is_symlink()
+    assert set(config.load_all(cfg)) == {"keepme", "new"}
+    stray.unlink()
+    assert len(list(tmp_path.glob("lookalike.toml*"))) == 1
+
+    # a command line type beats a profile wildcard covering the same column
+    cfg.write_text('[p.types]\n"*" = "text"\n')
+    capsys.readouterr()
+    assert main(["inspect", str(src), "--profile", "p", "--type", "email=uuid"]) == 0
+    assert re.search(r"^email\s+uuid", capsys.readouterr().out, re.M)
+
+    # hand-written profile names that need quoting list as valid TOML
+    cfg.write_text('["a.b"]\nkeep = ["id"]\n\n["日本 語".types]\nid = "int"\n')
+    capsys.readouterr()
+    assert main(["profile", "list"]) == 0
+    text = capsys.readouterr().out
+    assert config._parse(text, cfg) == config.load_all(cfg)
+
+    # --format on the command line replaces a bad one in the profile
+    cfg.write_text('[p]\nformat = "xml"\n')
+    assert main(["inspect", str(src), "--profile", "p"]) == 1
+    assert main(["inspect", str(src), "--profile", "p", "--format", "csv"]) == 0

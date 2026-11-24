@@ -4,6 +4,8 @@
 lookalike inspect   INPUT            [options]
 lookalike anonymize INPUT OUTPUT     [options]
 lookalike verify    ORIGINAL ANONYMIZED [options]
+lookalike profile save NAME          [options]
+lookalike profile list
 ```
 
 ## Commands
@@ -26,6 +28,11 @@ Compares an anonymized file with its original and prints the same summary
 `anonymize` does. Pass the same column and null options that were used to
 create the file. See [Verification](verification.md).
 
+### `profile save` and `profile list`
+
+Save a set of options under a name, and show what is saved. See
+[Profiles](#profiles).
+
 ## Options for all commands
 
 | Option | Meaning |
@@ -37,6 +44,8 @@ create the file. See [Verification](verification.md).
 | `--no-null-tokens` | Treat only empty cells as blanks. `NA`, `NULL` and similar are anonymized like any other value. |
 | `--format FORMAT` | `csv`, `json`, `jsonl` or `parquet`, when the file extension is not enough. |
 | `--delimiter CHAR` | CSV delimiter, when auto-detection picks the wrong one. |
+| `--profile NAME` | Start from the options saved under `[NAME]` in the config file. See [Profiles](#profiles). |
+| `--config FILE` | Read profiles from this file instead of the default one. |
 
 By default these strings count as blanks: `NULL`, `null`, `None`, `N/A`,
 `n/a`, `NA`, `NaN`, `nan`, `#N/A`. Empty and whitespace-only cells always do.
@@ -57,6 +66,92 @@ By default these strings count as blanks: `NULL`, `null`, `None`, `N/A`,
 |---|---|
 | `--unordered` | The output was written with `--shuffle-rows`. Only per-column totals can be compared in this mode. |
 | `--report FILE` | Save the results as JSON. |
+
+## Profiles
+
+A profile is a named set of options kept in a config file, so you do not have
+to retype the same `--type`, `--drop` and `--keep` flags for files you
+anonymize regularly. It stores option values only (column names, types,
+flags), never data.
+
+Save one from the flags you would otherwise pass:
+
+```
+lookalike profile save customers --drop ssn --keep quantity \
+    --type col7=name --type 'employee_no=regex:EMP\d{6}'
+```
+
+Then use it:
+
+```
+lookalike inspect   in.csv         --profile customers
+lookalike anonymize in.csv out.csv --profile customers
+lookalike verify    in.csv out.csv --profile customers
+```
+
+`lookalike profile list` prints the config file in use and its profiles:
+
+```
+[customers]
+keep = ["quantity"]
+drop = ["ssn"]
+
+[customers.types]
+col7 = "name"
+employee_no = 'regex:EMP\d{6}'
+```
+
+The file is [TOML](https://toml.io) and you can write or edit it by hand.
+Each `[NAME]` section is one profile. `profile save` only adds new profiles;
+to change or remove one, edit the file.
+
+| Setting | Same as | Value |
+|---|---|---|
+| `keep` | `--keep` | list of columns |
+| `drop` | `--drop` | list of columns |
+| `[NAME.types]` | `--type` | one `COLUMN = "TYPE"` line per column |
+| `null_values` | `--null-value` | list of strings |
+| `no_null_tokens` | `--no-null-tokens` | `true` or `false` |
+| `format` | `--format` | string |
+| `delimiter` | `--delimiter` | string |
+| `locale` | `--locale` | string |
+| `preserve_order` | `--preserve-order` | `true` or `false` |
+| `shuffle_rows` | `--shuffle-rows` | `true` or `false` |
+
+Notes on writing the file by hand:
+
+- Put a column name in quotes if it has anything other than letters, digits,
+  `-` and `_` in it: `"orders[].ref" = "uuid"`.
+- Write regex patterns in single quotes, so backslashes are taken as they
+  are: `'regex:EMP\d{6}'`.
+- `--seed` and `--report` cannot be saved.
+
+**Where the file lives.** The first of these is used; files are not combined:
+
+1. the file given with `--config FILE`
+2. the file named by the `LOOKALIKE_CONFIG` environment variable
+3. `lookalike.toml` in the current directory
+4. `~/.config/lookalike/config.toml` (or under `$XDG_CONFIG_HOME`)
+
+`profile save` writes to the same file, creating number 4 if none exists. A
+`lookalike.toml` next to your data can be committed with a project so everyone
+uses the same options.
+
+**Adding flags to a profile.** Flags on the command line go on top of the
+profile:
+
+- `--keep`, `--drop` and `--type` are added to the profile's. If a `--type`
+  on the command line and one in the profile cover the same column, the
+  command line wins, even when the profile's uses a wildcard.
+- `--format`, `--delimiter` and `--locale` replace the profile's value.
+- `--null-value` or `--no-null-tokens` replaces whatever the profile says
+  about nulls.
+- A switch the profile turns on (`shuffle_rows`, `preserve_order`) cannot be
+  turned off from the command line; edit the profile or leave `--profile` out.
+
+A profile with `shuffle_rows = true` makes `verify --profile` compare as
+`--unordered`. Settings that do not apply to a command are ignored (for
+example `locale` in `inspect`).
 
 ## Selecting columns
 
